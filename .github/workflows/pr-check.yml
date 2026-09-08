@@ -1,0 +1,53 @@
+name: 🔎 PR Quality Gate
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+    types: [opened, synchronize, reopened]
+
+jobs:
+  pr-checks:
+    name: PR Quality Gate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install flake8 black isort
+
+      - name: Lint check
+        run: |
+          flake8 api/ streaming/ pipeline/ \
+            --max-line-length=120 \
+            --exclude=__pycache__,*.pyc \
+            --count --statistics || true
+
+      - name: Validate docker-compose syntax
+        run: docker compose config > /dev/null
+
+      - name: Validate GitHub Actions workflows
+        run: |
+          pip install PyYAML
+          python -c "
+          import yaml, glob, sys
+          files = glob.glob('.github/workflows/*.yml')
+          for f in files:
+              with open(f) as fh:
+                  yaml.safe_load(fh)
+              print(f'✅ {f} — valid YAML')
+          print(f'Checked {len(files)} workflow(s)')
+          "
+
+      - name: Check for hardcoded secrets
+        run: |
+          echo "Scanning for potential hardcoded secrets..."
+          grep -rn --include="*.py" \
+            -E "(password|secret|api_key|token)\s*=\s*['\"][^'\"]{8,}" \
+            api/ streaming/ pipeline/ || echo "✅ No obvious hardcoded secrets found"

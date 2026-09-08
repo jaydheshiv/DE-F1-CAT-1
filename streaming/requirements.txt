@@ -1,0 +1,4 @@
+kafka-python-ng==2.2.2
+psycopg2-binary==2.9.9
+jsonschema==4.21.1
+python-dateutil==2.9.0.post0

@@ -1,0 +1,15 @@
+{
+  "type": "object",
+  "required": ["race_id", "driver_id", "lap", "position", "event_type"],
+  "properties": {
+    "race_id":      {"type": ["integer", "null"]},
+    "driver_id":    {"type": ["string",  "null"]},
+    "driver_code":  {"type": ["string",  "null"]},
+    "driver_name":  {"type": ["string",  "null"]},
+    "lap":          {"type": ["integer", "null"]},
+    "position":     {"type": ["integer", "null"]},
+    "lap_time":     {"type": ["string",  "null"]},
+    "milliseconds": {"type": ["integer", "null"]},
+    "event_type":   {"type": "string",   "enum": ["LAP_COMPLETE"]}
+  }
+}

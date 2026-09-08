@@ -1,0 +1,18 @@
+order_id,customer_id,customer_name,product_id,product_name,category,order_date,quantity,unit_price,discount,city,state,region
+ORD-001,C001,Arjun Mehta,P001,HP Laptop 15s,Electronics,2026-01-15,2,52000,0.05,Mumbai,Maharashtra,West
+ORD-002,C002,Priya Sharma,P005,Dell Monitor 24",Electronics,2026-01-20,5,18500,0.10,Delhi,Delhi,North
+ORD-003,C003,Rohan Nair,P002,Samsung Galaxy Buds,Electronics,2026-02-05,3,4500,0.00,Bangalore,Karnataka,South
+ORD-004,C004,Sana Patel,P003,Office Chair Ergonomic,Furniture,2026-02-14,4,12000,0.08,Ahmedabad,Gujarat,West
+ORD-005,C005,Kiran Reddy,P007,Wireless Keyboard Set,Electronics,2026-03-01,6,3200,0.05,Hyderabad,Telangana,South
+ORD-006,C006,Meera Iyer,P006,Canon Inkjet Printer,Electronics,2026-03-10,2,15000,0.00,Chennai,Tamil Nadu,South
+ORD-007,C007,Aditya Singh,P008,Executive Desk Teak,Furniture,2026-04-05,1,35000,0.10,Kolkata,West Bengal,East
+ORD-008,C008,Deepika Joshi,P004,A4 Copier Paper,Stationery,2026-04-18,20,450,0.00,Pune,Maharashtra,West
+ORD-009,C001,Arjun Mehta,P005,Dell Monitor 24",Electronics,2026-05-02,1,18500,0.00,Mumbai,Maharashtra,West
+ORD-010,C003,Rohan Nair,P001,HP Laptop 15s,Electronics,2026-05-20,3,52000,0.05,Bangalore,Karnataka,South
+ORD-011,C002,Priya Sharma,P008,Executive Desk Teak,Furniture,2026-06-07,2,35000,0.10,Delhi,Delhi,North
+ORD-012,C005,Kiran Reddy,P004,A4 Copier Paper,Stationery,2026-06-15,50,450,0.00,Hyderabad,Telangana,South
+ORD-013,C006,Meera Iyer,P002,Samsung Galaxy Buds,Electronics,2026-07-03,4,4500,0.05,Chennai,Tamil Nadu,South
+ORD-014,C004,Sana Patel,P001,HP Laptop 15s,Electronics,2026-07-22,2,52000,0.08,Ahmedabad,Gujarat,West
+ORD-015,,Missing Customer,P007,Wireless Keyboard Set,Electronics,2026-08-01,1,3200,0.00,Pune,Maharashtra,West
+ORD-016,C008,Deepika Joshi,P003,Office Chair Ergonomic,Furniture,2026-08-05,3,12000,0.00,Pune,Maharashtra,West
+ORD-017,C007,Aditya Singh,P005,Dell Monitor 24",Electronics,2026-08-09,2,18500,0.05,Kolkata,West Bengal,East
