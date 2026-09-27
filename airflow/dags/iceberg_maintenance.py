@@ -15,19 +15,22 @@ from airflow.operators.empty import EmptyOperator
 # ── Try to import Phase II alerting ──────────────────────────
 import sys as _sys
 from pathlib import Path as _Path
-_monitoring_paths = [
-    str(_Path(__file__).resolve().parents[2] / "monitoring"),
-    "/opt/airflow/monitoring",
-]
-for _p in _monitoring_paths:
-    if _p not in _sys.path:
+
+_this_file = _Path(__file__).resolve()
+_project_root = _this_file.parents[2] if len(_this_file.parents) > 2 else _this_file.parent
+
+for _p in [str(_project_root), str(_project_root / "monitoring"), "/opt/airflow", "/opt/airflow/monitoring"]:
+    if _p not in _sys.path and (_Path(_p).exists() or _p.startswith("/opt/")):
         _sys.path.insert(0, _p)
 
 try:
-    from alerting import alert_on_failure, alert_on_success
+    from monitoring.alerting import alert_on_failure, alert_on_success
 except ImportError:
-    alert_on_failure = None
-    alert_on_success = None
+    try:
+        from alerting import alert_on_failure, alert_on_success
+    except ImportError:
+        alert_on_failure = None
+        alert_on_success = None
 
 logger = logging.getLogger(__name__)
 
@@ -134,10 +137,6 @@ def remove_orphan_files(**context):
     cursor = conn.cursor()
     results = []
 
-    retention_ts = (datetime.utcnow() - timedelta(hours=72)).strftime(
-        "%Y-%m-%d %H:%M:%S.%f"
-    )
-
     for table in ICEBERG_TABLES:
         try:
             fqn = f"{ICEBERG_CATALOG}.{ICEBERG_SCHEMA}.{table}"
@@ -234,7 +233,7 @@ with DAG(
     dag_id="iceberg_maintenance",
     default_args=default_args,
     description="Automated Iceberg table maintenance: compaction, snapshot expiry, orphan cleanup",
-    schedule_interval="0 */6 * * *",  # Every 6 hours
+    schedule="0 */6 * * *",  # Every 6 hours
     start_date=datetime(2024, 1, 1),
     catchup=False,
     tags=["phase2", "iceberg", "maintenance", "lakehouse"],

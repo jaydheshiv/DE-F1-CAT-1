@@ -6,11 +6,32 @@ the F1 Star Schema in PostgreSQL with full idempotency (ON CONFLICT).
 from datetime import datetime, timedelta
 import os
 import csv
+import logging
+import sys as _sys
+from pathlib import Path as _Path
 import psycopg2
 from airflow import DAG
 from airflow.operators.empty import EmptyOperator
 from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
 from airflow.operators.python import PythonOperator
+
+# ── Dynamic Path Configuration for Observability ─────────────
+_this_file = _Path(__file__).resolve()
+_project_root = _this_file.parents[2] if len(_this_file.parents) > 2 else _this_file.parent
+
+for _p in [str(_project_root), str(_project_root / "monitoring"), "/opt/airflow", "/opt/airflow/monitoring"]:
+    if _p not in _sys.path and (_Path(_p).exists() or _p.startswith("/opt/")):
+        _sys.path.insert(0, _p)
+
+try:
+    from monitoring.alerting import alert_on_failure as _alert_on_failure
+except ImportError:
+    try:
+        from alerting import alert_on_failure as _alert_on_failure
+    except ImportError:
+        _alert_on_failure = None
+
+logger = logging.getLogger(__name__)
 
 # ──────────────────────────────────────────
 # DB connection helper
@@ -357,26 +378,6 @@ def log_etl_run(**context):
     finally:
         conn.close()
 
-
-# ── Phase II: Import alerting callbacks ──────────────────────
-import sys as _sys
-from pathlib import Path as _Path
-
-_monitoring_paths = [
-    str(_Path(__file__).resolve().parents[2] / "monitoring"),
-    "/opt/airflow/monitoring",
-]
-for _p in _monitoring_paths:
-    if _p not in _sys.path:
-        _sys.path.insert(0, _p)
-
-try:
-    from alerting import alert_on_failure as _alert_on_failure
-except ImportError:
-    try:
-        from monitoring.alerting import alert_on_failure as _alert_on_failure
-    except ImportError:
-        _alert_on_failure = None
 
 # ──────────────────────────────────────────
 # DAG Definition
