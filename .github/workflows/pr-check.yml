@@ -24,13 +24,15 @@ jobs:
 
       - name: Lint check
         run: |
-          flake8 api/ streaming/ pipeline/ \
+          flake8 api/ streaming/ pipeline/ lakehouse/ monitoring/ \
             --max-line-length=120 \
             --exclude=__pycache__,*.pyc \
             --count --statistics || true
 
       - name: Validate docker-compose syntax
-        run: docker compose config > /dev/null
+        run: |
+          docker compose config > /dev/null
+          docker compose -f docker-compose.yml -f docker-compose.phase2.yml config > /dev/null
 
       - name: Validate GitHub Actions workflows
         run: |

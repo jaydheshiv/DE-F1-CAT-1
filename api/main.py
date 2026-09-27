@@ -714,3 +714,266 @@ def get_f1_stats():
         }
     finally:
         conn.close()
+
+
+# ══════════════════════════════════════════════════════════════
+# PHASE II — LAKEHOUSE ENDPOINTS (Trino-Powered)
+# ══════════════════════════════════════════════════════════════
+
+TRINO_HOST = os.environ.get("TRINO_HOST", "trino")
+TRINO_PORT = int(os.environ.get("TRINO_PORT", "8090"))
+TRINO_CATALOG = os.environ.get("TRINO_CATALOG", "iceberg")
+TRINO_SCHEMA = os.environ.get("TRINO_SCHEMA", "lakehouse")
+
+
+def _get_trino():
+    """Get a Trino DBAPI connection."""
+    try:
+        import trino as trino_lib
+    except ImportError:
+        raise HTTPException(
+            status_code=503,
+            detail="Trino client not installed. Install with: pip install trino"
+        )
+    return trino_lib.dbapi.connect(
+        host=TRINO_HOST,
+        port=TRINO_PORT,
+        user="api",
+        catalog=TRINO_CATALOG,
+        schema=TRINO_SCHEMA,
+    )
+
+
+@app.get("/api/v2/lakehouse/health")
+def lakehouse_health():
+    """Check lakehouse health: Trino connectivity, Iceberg table stats."""
+    try:
+        conn = _get_trino()
+        cursor = conn.cursor()
+
+        tables_info = {}
+        for table in ["raw_lap_events", "dead_letter_queue", "cleaned_laps", "agg_driver_race_stats"]:
+            try:
+                cursor.execute(f"SELECT count(*) FROM {TRINO_CATALOG}.{TRINO_SCHEMA}.{table}")
+                count = cursor.fetchone()[0]
+                tables_info[table] = {"records": count, "status": "healthy"}
+            except Exception as e:
+                tables_info[table] = {"records": 0, "status": "error", "error": str(e)}
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "status": "healthy",
+            "trino": {"host": TRINO_HOST, "port": TRINO_PORT, "connected": True},
+            "tables": tables_info,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+    except Exception as e:
+        return {
+            "status": "degraded",
+            "trino": {"host": TRINO_HOST, "port": TRINO_PORT, "connected": False, "error": str(e)},
+            "tables": {},
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
+
+@app.get("/api/v2/lakehouse/laps")
+def lakehouse_laps(
+    limit: int = Query(default=100, ge=1, le=1000),
+    race_id: Optional[int] = Query(default=None),
+    driver_id: Optional[str] = Query(default=None),
+):
+    """Query lap events from Iceberg cleaned_laps table via Trino."""
+    try:
+        conn = _get_trino()
+        cursor = conn.cursor()
+
+        query = f"SELECT * FROM {TRINO_CATALOG}.{TRINO_SCHEMA}.cleaned_laps WHERE 1=1"
+        if race_id:
+            query += f" AND race_id = {race_id}"
+        if driver_id:
+            query += f" AND driver_id = '{driver_id}'"
+        query += f" ORDER BY ingested_at DESC LIMIT {limit}"
+
+        cursor.execute(query)
+        columns = [desc[0] for desc in cursor.description]
+        rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+        cursor.close()
+        conn.close()
+
+        return {"count": len(rows), "data": rows}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Trino query failed: {e}")
+
+
+@app.get("/api/v2/lakehouse/stats")
+def lakehouse_stats(race_id: Optional[int] = Query(default=None)):
+    """Query aggregated driver stats from Iceberg via Trino."""
+    try:
+        conn = _get_trino()
+        cursor = conn.cursor()
+
+        query = f"SELECT * FROM {TRINO_CATALOG}.{TRINO_SCHEMA}.agg_driver_race_stats"
+        if race_id:
+            query += f" WHERE race_id = {race_id}"
+        query += " ORDER BY total_laps DESC LIMIT 100"
+
+        cursor.execute(query)
+        columns = [desc[0] for desc in cursor.description]
+        rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+        cursor.close()
+        conn.close()
+
+        return {"count": len(rows), "data": rows}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Trino query failed: {e}")
+
+
+@app.get("/api/v2/lakehouse/dlq")
+def lakehouse_dlq(limit: int = Query(default=50, ge=1, le=500)):
+    """Query dead letter queue from Iceberg via Trino."""
+    try:
+        conn = _get_trino()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            f"SELECT * FROM {TRINO_CATALOG}.{TRINO_SCHEMA}.dead_letter_queue "
+            f"ORDER BY ingested_at DESC LIMIT {limit}"
+        )
+        columns = [desc[0] for desc in cursor.description]
+        rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+        cursor.close()
+        conn.close()
+
+        return {"count": len(rows), "data": rows}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Trino query failed: {e}")
+
+
+@app.get("/api/v2/lineage")
+def get_lineage():
+    """Get data lineage graph."""
+    conn = get_db()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT lineage_id, source_system, source_table, transform_name,
+                       dest_system, dest_table, column_mappings, description,
+                       created_at::text, updated_at::text
+                FROM audit.data_lineage
+                ORDER BY created_at
+            """)
+            records = cur.fetchall()
+
+        # Generate Mermaid diagram
+        lines = ["graph LR"]
+        nodes = set()
+        for rec in records:
+            src = (rec["source_system"] or "").replace(":", "_").replace("-", "_")
+            dst = (rec["dest_system"] or "").replace(":", "_").replace("-", "_")
+            src_tbl = (rec["source_table"] or "source").replace("-", "_")
+            dst_tbl = (rec["dest_table"] or "dest").replace("-", "_")
+            transform = (rec["transform_name"] or "").replace("-", "_").replace(" ", "_")
+
+            src_node = f"{src}__{src_tbl}"
+            dst_node = f"{dst}__{dst_tbl}"
+
+            if src_node not in nodes:
+                lines.append(f'  {src_node}["{rec["source_system"]}/{rec["source_table"] or "*"}"]')
+                nodes.add(src_node)
+            if dst_node not in nodes:
+                lines.append(f'  {dst_node}["{rec["dest_system"]}/{rec["dest_table"]}"]')
+                nodes.add(dst_node)
+            lines.append(f"  {src_node} -->|{transform}| {dst_node}")
+
+        mermaid = "\n".join(lines)
+
+        return {
+            "records": [dict(r) for r in records],
+            "count": len(records),
+            "mermaid_diagram": mermaid,
+        }
+    except Exception as e:
+        return {"records": [], "count": 0, "mermaid_diagram": "", "error": str(e)}
+    finally:
+        conn.close()
+
+
+@app.get("/api/v2/metrics")
+def get_pipeline_metrics():
+    """Get recent pipeline metrics."""
+    conn = get_db()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT pipeline_name, metric_name,
+                       AVG(metric_value) as avg_value,
+                       MAX(metric_value) as max_value,
+                       MIN(metric_value) as min_value,
+                       COUNT(*) as sample_count
+                FROM audit.pipeline_metrics
+                WHERE recorded_at > NOW() - INTERVAL '1 hour'
+                GROUP BY pipeline_name, metric_name
+                ORDER BY pipeline_name, metric_name
+            """)
+            aggregated = cur.fetchall()
+
+            cur.execute("""
+                SELECT * FROM audit.pipeline_metrics
+                WHERE recorded_at > NOW() - INTERVAL '30 minutes'
+                ORDER BY recorded_at DESC
+                LIMIT 100
+            """)
+            recent = cur.fetchall()
+
+        return {
+            "aggregated": [dict(r) for r in aggregated],
+            "recent": [dict(r) for r in recent],
+        }
+    except Exception as e:
+        return {"aggregated": [], "recent": [], "error": str(e)}
+    finally:
+        conn.close()
+
+
+@app.get("/api/v2/iceberg/tables")
+def get_iceberg_table_registry():
+    """Get Iceberg table metadata from the registry."""
+    conn = get_db()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT catalog_name, schema_name, table_name, location,
+                       partition_spec, last_compaction::text, last_snapshot_expiry::text,
+                       snapshot_count, file_count, total_records, updated_at::text
+                FROM audit.iceberg_table_registry
+                ORDER BY table_name
+            """)
+            tables = cur.fetchall()
+        return {"tables": [dict(r) for r in tables]}
+    except Exception as e:
+        return {"tables": [], "error": str(e)}
+    finally:
+        conn.close()
+
+
+# ── Prometheus Metrics Endpoint ──────────────────────────────
+@app.get("/metrics")
+def prometheus_metrics():
+    """Expose Prometheus metrics for scraping."""
+    try:
+        from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+        from fastapi.responses import Response
+        return Response(
+            content=generate_latest(),
+            media_type=CONTENT_TYPE_LATEST,
+        )
+    except ImportError:
+        return JSONResponse(
+            content={"error": "prometheus_client not installed"},
+            status_code=503,
+        )

@@ -24,7 +24,8 @@ def _get_conn():
         password=os.environ.get("POSTGRES_PASSWORD", "labpassword"),
     )
 
-CSV_DIR = "/app/f1db"
+_local_csv = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "f1 db"))
+CSV_DIR = os.environ.get("CSV_DIR", "/app/f1db" if os.path.exists("/app/f1db") else _local_csv)
 
 # ──────────────────────────────────────────
 # Loader helpers
@@ -347,7 +348,7 @@ def log_etl_run(**context):
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO etl_run_log (load_type, rows_extracted, rows_loaded, status, completed_at) "
+                "INSERT INTO audit.etl_run_log (load_type, rows_extracted, rows_loaded, status, completed_at) "
                 "VALUES (%s,%s,%s,%s,NOW())",
                 ("F1_CSV_FULL", total, total, "SUCCESS")
             )
@@ -356,6 +357,26 @@ def log_etl_run(**context):
     finally:
         conn.close()
 
+
+# ── Phase II: Import alerting callbacks ──────────────────────
+import sys as _sys
+from pathlib import Path as _Path
+
+_monitoring_paths = [
+    str(_Path(__file__).resolve().parents[2] / "monitoring"),
+    "/opt/airflow/monitoring",
+]
+for _p in _monitoring_paths:
+    if _p not in _sys.path:
+        _sys.path.insert(0, _p)
+
+try:
+    from alerting import alert_on_failure as _alert_on_failure
+except ImportError:
+    try:
+        from monitoring.alerting import alert_on_failure as _alert_on_failure
+    except ImportError:
+        _alert_on_failure = None
 
 # ──────────────────────────────────────────
 # DAG Definition
@@ -369,6 +390,10 @@ default_args = {
     "retries": 2,
     "retry_delay": timedelta(minutes=2),
 }
+
+# Phase II: Add failure alert callback
+if _alert_on_failure:
+    default_args["on_failure_callback"] = _alert_on_failure
 
 with DAG(
     "f1_etl_pipeline",

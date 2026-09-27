@@ -49,5 +49,30 @@
 
 ## 6. Serving Layer
 - **API (FastAPI):** Exposes F1 data via dynamic endpoints, pagination, and OLAP query endpoints.
-- **React Frontend:** Displays Hero stats, tables, and CDC live streaming lap events updating automatically.
+  - **Phase II:** `/api/v2/lakehouse/*` endpoints powered by Trino queries against Iceberg.
+- **React Frontend:** Displays Hero stats, tables, CDC live streaming, and **Lakehouse** tab (Phase II).
 - **Streamlit Dashboard:** Displays interactive charts (Driver/Constructor standings, Profiles, Maps, DLQ monitor).
+
+## 7. Phase II: Lakehouse Architecture
+- **MinIO (port 9000/9001):** S3-compatible object storage for Iceberg data files.
+- **Hive Metastore (port 9083):** Apache Iceberg catalog backend.
+- **PySpark Structured Streaming (port 4040):** Kafka → Iceberg streaming pipeline.
+- **Trino (port 8090):** Distributed SQL engine querying Iceberg tables.
+
+### Iceberg Tables
+- `lakehouse.raw_lap_events` — All Kafka events, partitioned by `race_id`
+- `lakehouse.dead_letter_queue` — Invalid events with error metadata
+- `lakehouse.cleaned_laps` — Validated, enriched lap data
+- `lakehouse.agg_driver_race_stats` — Aggregated per-driver statistics
+
+### Phase II Airflow DAGs
+- `iceberg_maintenance` — Compaction, snapshot expiry, orphan cleanup (every 6h)
+- `pipeline_alerting` — Health monitoring, latency checks, DLQ alerts (every 30m)
+- `data_lineage` — Lineage record seeding and report generation (daily)
+
+## 8. Observability (Phase II)
+- **Structured Logging:** JSON-formatted logs with correlation IDs (`monitoring/logging_config.py`)
+- **Alerting:** Email (SMTP) + Slack (webhook) for pipeline failures (`monitoring/alerting.py`)
+- **Metrics:** Prometheus counters, histograms, gauges at `/metrics` (`monitoring/metrics.py`)
+- **Data Lineage:** Source-to-destination tracking with column mappings (`monitoring/lineage.py`)
+

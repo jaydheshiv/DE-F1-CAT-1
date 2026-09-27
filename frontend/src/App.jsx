@@ -927,6 +927,366 @@ function HeroStats() {
 }
 
 // ══════════════════════════════════════════════════════
+// PHASE II — LAKEHOUSE DASHBOARD
+// ══════════════════════════════════════════════════════
+function Lakehouse() {
+  const [tab, setTab] = useState('overview')
+  const [health, setHealth] = useState(null)
+  const [laps, setLaps] = useState([])
+  const [stats, setStats] = useState([])
+  const [dlq, setDlq] = useState([])
+  const [lineage, setLineage] = useState(null)
+  const [metrics, setMetrics] = useState(null)
+  const [tables, setTables] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [autoRefresh, setAutoRefresh] = useState(true)
+
+  // Auto-refresh every 5 seconds for real-time data
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const [h, l, s, d] = await Promise.allSettled([
+          axios.get(`${API}/v2/lakehouse/health`),
+          axios.get(`${API}/v2/lakehouse/laps?limit=50`),
+          axios.get(`${API}/v2/lakehouse/stats`),
+          axios.get(`${API}/v2/lakehouse/dlq?limit=20`),
+        ])
+        if (h.status === 'fulfilled') setHealth(h.value.data)
+        if (l.status === 'fulfilled') setLaps(l.value.data?.data || [])
+        if (s.status === 'fulfilled') setStats(s.value.data?.data || [])
+        if (d.status === 'fulfilled') setDlq(d.value.data?.data || [])
+      } catch (e) { console.warn('Lakehouse API not available:', e) }
+    }
+    load()
+    if (!autoRefresh) return
+    const interval = setInterval(load, 5000)
+    return () => clearInterval(interval)
+  }, [autoRefresh])
+
+  // Load lineage and table metadata once
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const [lin, tbl, met] = await Promise.allSettled([
+          axios.get(`${API}/v2/lineage`),
+          axios.get(`${API}/v2/iceberg/tables`),
+          axios.get(`${API}/v2/metrics`),
+        ])
+        if (lin.status === 'fulfilled') setLineage(lin.value.data)
+        if (tbl.status === 'fulfilled') setTables(tbl.value.data?.tables || [])
+        if (met.status === 'fulfilled') setMetrics(met.value.data)
+      } catch {}
+    }
+    load()
+  }, [])
+
+  const subTabs = [
+    { id: 'overview', label: '📋 Overview', icon: '📋' },
+    { id: 'laps', label: '🏎️ Live Laps', icon: '🏎️' },
+    { id: 'stats', label: '📊 Driver Stats', icon: '📊' },
+    { id: 'dlq', label: '❌ Dead Letter Queue', icon: '❌' },
+    { id: 'lineage', label: '🗺️ Data Lineage', icon: '🗺️' },
+    { id: 'tables', label: '🧊 Iceberg Tables', icon: '🧊' },
+  ]
+
+  return (
+    <div className="fade-in">
+      <div className="section-heading">
+        <h2>🏔️ Phase II — Real-Time Lakehouse Architecture</h2>
+        <p>Production-grade streaming pipeline: Kafka → Spark → Iceberg → Trino → Dashboard</p>
+      </div>
+
+      {/* Sub-tabs */}
+      <div className="lakehouse-subtabs">
+        {subTabs.map(st => (
+          <button key={st.id}
+            className={`lakehouse-subtab ${tab === st.id ? 'active' : ''}`}
+            onClick={() => setTab(st.id)}>
+            {st.label}
+          </button>
+        ))}
+        <label className="auto-refresh-toggle">
+          <input type="checkbox" checked={autoRefresh}
+            onChange={e => setAutoRefresh(e.target.checked)} />
+          <span className={`live-dot ${autoRefresh ? '' : 'paused'}`} />
+          Auto-refresh
+        </label>
+      </div>
+
+      {/* ── Overview Tab ─────────────────────────────────── */}
+      {tab === 'overview' && (
+        <div className="lakehouse-overview">
+          <div className="lakehouse-status-grid">
+            <div className={`status-card ${health?.status === 'healthy' ? 'healthy' : 'degraded'}`}>
+              <div className="status-icon">{health?.status === 'healthy' ? '✅' : '⚠️'}</div>
+              <div className="status-title">Trino</div>
+              <div className="status-detail">
+                {health?.trino?.connected ? 'Connected' : 'Disconnected'}
+              </div>
+            </div>
+            {health?.tables && Object.entries(health.tables).map(([name, info]) => (
+              <div key={name} className={`status-card ${info.status === 'healthy' ? 'healthy' : 'degraded'}`}>
+                <div className="status-icon">{info.status === 'healthy' ? '🧊' : '❌'}</div>
+                <div className="status-title">{name.replace(/_/g, ' ')}</div>
+                <div className="status-detail">{fmt(info.records)} records</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Architecture diagram */}
+          <div className="card" style={{ marginTop: '1.5rem' }}>
+            <h3>Architecture Flow</h3>
+            <pre className="arch-diagram">{`
+┌─────────────┐     ┌──────────┐     ┌──────────────┐     ┌─────────────────────┐
+│  F1 CSV DB  │────▶│ Producer │────▶│ Kafka Topic  │────▶│  PySpark Structured │
+│  (Raw Data) │     │          │     │f1-lap-events │     │     Streaming       │
+└─────────────┘     └──────────┘     └──────────────┘     └──────────┬──────────┘
+                                                                     │
+                                                        ┌────────────▼────────────┐
+                                                        │  MinIO (S3-compatible)  │
+                                                        │  Apache Iceberg Tables  │
+                                                        │  ├── raw_lap_events     │
+                                                        │  ├── cleaned_laps       │
+                                                        │  ├── agg_driver_stats   │
+                                                        │  └── dead_letter_queue  │
+                                                        └────────────┬────────────┘
+                                                                     │
+┌──────────┐     ┌──────────────┐                                    │
+│  React   │◀────│    Trino     │◀───────────────────────────────────┘
+│Dashboard │     │(SQL Engine)  │     ┌──────────────┐
+└──────────┘     └──────────────┘     │   Airflow    │
+                                      │ (Compaction) │
+                                      └──────────────┘`}
+            </pre>
+          </div>
+
+          {/* Pipeline metrics summary */}
+          {metrics && (
+            <div className="card" style={{ marginTop: '1.5rem' }}>
+              <h3>Pipeline Metrics (Last Hour)</h3>
+              {metrics.aggregated?.length > 0 ? (
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Pipeline</th><th>Metric</th><th>Avg</th><th>Max</th><th>Min</th><th>Samples</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {metrics.aggregated.map((m, i) => (
+                      <tr key={i}>
+                        <td>{m.pipeline_name}</td>
+                        <td><code>{m.metric_name}</code></td>
+                        <td>{fmt(m.avg_value)}</td>
+                        <td>{fmt(m.max_value)}</td>
+                        <td>{fmt(m.min_value)}</td>
+                        <td>{m.sample_count}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <p className="dim">No metrics recorded yet. Run the streaming pipeline to generate metrics.</p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Live Laps Tab ────────────────────────────────── */}
+      {tab === 'laps' && (
+        <div className="card">
+          <h3>🏎️ Real-Time Lap Events from Iceberg (via Trino)</h3>
+          <p className="dim">Auto-refreshing every 5 seconds | Showing latest 50 events</p>
+          {laps.length > 0 ? (
+            <div className="table-scroll">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Race</th><th>Driver</th><th>Code</th><th>Lap</th>
+                    <th>Position</th><th>Lap Time</th><th>Seconds</th><th>Ingested</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {laps.map((l, i) => (
+                    <tr key={i} className={i < 3 ? 'row-fresh' : ''}>
+                      <td>{l.race_id}</td>
+                      <td>{l.driver_name || l.driver_id}</td>
+                      <td><span className="driver-code">{l.driver_code}</span></td>
+                      <td>{l.lap}</td>
+                      <td><span className={`pos-badge pos-${l.position <= 3 ? l.position : 'other'}`}>{l.position}</span></td>
+                      <td>{l.lap_time || '—'}</td>
+                      <td>{l.seconds ? l.seconds.toFixed(3) : '—'}</td>
+                      <td className="dim">{dt(l.ingested_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="dim">No lap data available. Start the Spark streaming pipeline to ingest events.</p>
+          )}
+        </div>
+      )}
+
+      {/* ── Driver Stats Tab ─────────────────────────────── */}
+      {tab === 'stats' && (
+        <div className="card">
+          <h3>📊 Aggregated Driver Race Statistics (from Iceberg)</h3>
+          {stats.length > 0 ? (
+            <div className="table-scroll">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Race</th><th>Driver</th><th>Code</th><th>Laps</th>
+                    <th>Best Pos</th><th>Worst Pos</th><th>Avg Lap (ms)</th>
+                    <th>Best Lap (ms)</th><th>Total Time (ms)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stats.map((s, i) => (
+                    <tr key={i}>
+                      <td>{s.race_id}</td>
+                      <td>{s.driver_name || s.driver_id}</td>
+                      <td><span className="driver-code">{s.driver_code}</span></td>
+                      <td>{s.total_laps}</td>
+                      <td><span className={`pos-badge pos-${s.best_position <= 3 ? s.best_position : 'other'}`}>{s.best_position}</span></td>
+                      <td>{s.worst_position}</td>
+                      <td>{s.avg_lap_ms ? fmt(s.avg_lap_ms) : '—'}</td>
+                      <td>{s.best_lap_ms ? fmt(s.best_lap_ms) : '—'}</td>
+                      <td>{s.total_time_ms ? fmt(s.total_time_ms) : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="dim">No stats available yet. Run the pipeline to compute aggregations.</p>
+          )}
+        </div>
+      )}
+
+      {/* ── DLQ Tab ──────────────────────────────────────── */}
+      {tab === 'dlq' && (
+        <div className="card">
+          <h3>❌ Dead Letter Queue (Invalid Events in Iceberg)</h3>
+          {dlq.length > 0 ? (
+            <div className="table-scroll">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Event ID</th><th>Error Type</th><th>Error Message</th>
+                    <th>Raw Payload</th><th>Ingested</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dlq.map((d, i) => (
+                    <tr key={i} className="row-error">
+                      <td className="dim">{(d.event_id || '').substring(0, 8)}…</td>
+                      <td><span className="error-badge">{d.error_type}</span></td>
+                      <td>{d.error_message}</td>
+                      <td><code className="dim">{(d.raw_payload || '').substring(0, 60)}…</code></td>
+                      <td className="dim">{dt(d.ingested_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="dim">No DLQ entries. All events are passing validation!</p>
+          )}
+        </div>
+      )}
+
+      {/* ── Lineage Tab ──────────────────────────────────── */}
+      {tab === 'lineage' && (
+        <div className="card">
+          <h3>🗺️ Data Lineage — Source to Destination</h3>
+          <p className="dim">Tracks data flow from origin through transformations to final tables.</p>
+          {lineage?.records?.length > 0 ? (
+            <>
+              <div className="lineage-flow">
+                {lineage.records.map((r, i) => (
+                  <div key={i} className="lineage-row">
+                    <div className="lineage-node source">{r.source_system}<br/><small>{r.source_table || '∗'}</small></div>
+                    <div className="lineage-arrow">→ <span className="lineage-transform">{r.transform_name}</span> →</div>
+                    <div className="lineage-node dest">{r.dest_system}<br/><small>{r.dest_table}</small></div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Column mappings detail */}
+              <h4 style={{ marginTop: '2rem' }}>Column-Level Lineage</h4>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Source</th><th>Transform</th><th>Destination</th><th>Column Mappings</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lineage.records.filter(r => r.column_mappings).map((r, i) => (
+                    <tr key={i}>
+                      <td>{r.source_system}/{r.source_table || '∗'}</td>
+                      <td><code>{r.transform_name}</code></td>
+                      <td>{r.dest_system}/{r.dest_table}</td>
+                      <td>
+                        {Object.entries(typeof r.column_mappings === 'string'
+                          ? JSON.parse(r.column_mappings)
+                          : r.column_mappings
+                        ).map(([src, dst]) => (
+                          <div key={src} className="col-mapping">
+                            <code>{src}</code> → <code>{dst}</code>
+                          </div>
+                        ))}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          ) : (
+            <p className="dim">No lineage records found. Run the lineage DAG in Airflow to seed records.</p>
+          )}
+        </div>
+      )}
+
+      {/* ── Iceberg Tables Tab ───────────────────────────── */}
+      {tab === 'tables' && (
+        <div className="card">
+          <h3>🧊 Iceberg Table Registry</h3>
+          <p className="dim">Table metadata collected by the Iceberg maintenance DAG.</p>
+          {tables.length > 0 ? (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Catalog</th><th>Schema</th><th>Table</th>
+                  <th>Snapshots</th><th>Records</th>
+                  <th>Last Compaction</th><th>Updated</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tables.map((t, i) => (
+                  <tr key={i}>
+                    <td>{t.catalog_name}</td>
+                    <td>{t.schema_name}</td>
+                    <td><strong>{t.table_name}</strong></td>
+                    <td>{t.snapshot_count}</td>
+                    <td>{fmt(t.total_records)}</td>
+                    <td className="dim">{t.last_compaction || '—'}</td>
+                    <td className="dim">{t.updated_at || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className="dim">No table metadata yet. Run the Iceberg maintenance DAG.</p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ══════════════════════════════════════════════════════
 // ROOT APP
 // ══════════════════════════════════════════════════════
 const TABS = [
@@ -935,6 +1295,7 @@ const TABS = [
   { id:'w3', week:'W3', label:'Schema Design',         icon:'🏗️', Component: Week3 },
   { id:'w4', week:'W4', label:'Batch Pipeline',        icon:'🐍', Component: Week4 },
   { id:'w5', week:'W5', label:'Production Pipelines',  icon:'🛡️', Component: Week5 },
+  { id:'lh', week:'P2', label:'Lakehouse',             icon:'🏔️', Component: Lakehouse },
 ]
 
 export default function App() {
@@ -975,3 +1336,4 @@ export default function App() {
     </div>
   )
 }
+

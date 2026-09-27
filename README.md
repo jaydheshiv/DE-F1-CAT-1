@@ -143,6 +143,65 @@ DE-F1-CAT-1/
 
 ---
 
+## 🏔️ Phase II — Real-Time Lakehouse Architecture
+
+Phase II upgrades the platform into a **production-ready lakehouse** with real-time streaming, open table formats, and distributed SQL.
+
+### New Services
+
+| Service | Tech | Port | Description |
+|---------|------|------|-------------|
+| `minio` | MinIO | 9000/9001 | S3-compatible object storage |
+| `hive-metastore` | Apache Hive 4.0 | 9083 | Iceberg catalog |
+| `spark-iceberg` | PySpark 3.5 | 4040 | Structured Streaming (Kafka → Iceberg) |
+| `trino` | Trino 443 | 8090 | Distributed SQL engine |
+
+### Key Features
+- 🔄 **Real-Time Streaming** — PySpark Structured Streaming from Kafka to Iceberg
+- 🧊 **Apache Iceberg** — Open table format with ACID transactions, time travel, schema evolution
+- ⚡ **Trino SQL** — Fast, interactive queries over Iceberg tables
+- 📊 **Automated Maintenance** — Compaction, snapshot expiry, orphan cleanup via Airflow
+- 🔔 **Alerting** — Email + Slack alerts for pipeline failures
+- 🗺️ **Data Lineage** — Source-to-destination tracking with column-level mappings
+- 📈 **Prometheus Metrics** — Pipeline latency, throughput, error rates
+
+### Quick Start (Phase II)
+
+```bash
+# Start all Phase I + Phase II services
+docker compose -f docker-compose.yml -f docker-compose.phase2.yml up -d --build
+
+# Access Phase II UIs
+# MinIO Console:  http://localhost:9001  (minioadmin/minioadmin)
+# Spark UI:       http://localhost:4040
+# Trino UI:       http://localhost:8090
+# Dashboard:      http://localhost:5173 → Lakehouse tab
+```
+
+### Phase II Directory Structure
+
+```
+lakehouse/
+├── spark/
+│   ├── streaming_to_iceberg.py    # PySpark Structured Streaming
+│   ├── Dockerfile.spark           # Custom Spark + Iceberg image
+│   └── spark-defaults.conf
+├── trino/etc/                     # Trino configuration
+│   ├── catalog/iceberg.properties
+│   └── config.properties
+└── minio-init.sh                  # Bucket bootstrap
+
+monitoring/
+├── logging_config.py              # Structured JSON logging
+├── alerting.py                    # Email + Slack alerts
+├── metrics.py                     # Prometheus metrics
+└── lineage.py                     # Data lineage tracker
+```
+
+> See [docs/phase2_architecture.md](docs/phase2_architecture.md) for full details.
+
+---
+
 ## 👨‍💻 Author
 
 **Jaydheshiv** — Data Engineering Lab, Semester 9
@@ -152,3 +211,4 @@ DE-F1-CAT-1/
 ## 📄 License
 
 MIT License — see [LICENSE](LICENSE) for details.
+

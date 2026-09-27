@@ -359,3 +359,137 @@ tbody tr:hover td { background: rgba(99,102,241,0.05); }
   box-shadow: 0 0 16px rgba(225,6,0,0.1);
 }
 .tab-btn.active .week-badge { background: var(--f1-red); color: white; }
+
+/* ══════════════════════════════════════════════════════
+   PHASE II — LAKEHOUSE DASHBOARD STYLES
+   ══════════════════════════════════════════════════════ */
+
+/* ── Sub-tabs ── */
+.lakehouse-subtabs {
+  display: flex; flex-wrap: wrap; gap: 0.5rem;
+  padding: 0.75rem 0; margin-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+  align-items: center;
+}
+.lakehouse-subtab {
+  background: var(--panel); color: var(--text-2);
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 0.5rem 1rem; cursor: pointer;
+  font-size: 0.85rem; font-weight: 500;
+  transition: all 0.2s ease;
+}
+.lakehouse-subtab:hover { background: var(--panel-hover); color: var(--text); }
+.lakehouse-subtab.active {
+  background: rgba(99, 102, 241, 0.15); color: var(--indigo);
+  border-color: var(--indigo); box-shadow: 0 0 12px var(--indigo-glow);
+}
+
+/* ── Auto-refresh toggle ── */
+.auto-refresh-toggle {
+  display: flex; align-items: center; gap: 0.5rem;
+  margin-left: auto; font-size: 0.82rem; color: var(--text-2);
+  cursor: pointer; user-select: none;
+}
+.auto-refresh-toggle input { display: none; }
+.auto-refresh-toggle .live-dot.paused {
+  background: var(--text-3); box-shadow: none; animation: none;
+}
+
+/* ── Status grid ── */
+.lakehouse-status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 1rem;
+}
+.status-card {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 1.25rem;
+  text-align: center; transition: all 0.3s ease;
+}
+.status-card.healthy { border-color: rgba(16, 185, 129, 0.3); }
+.status-card.degraded { border-color: rgba(244, 63, 94, 0.3); }
+.status-card:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.3); }
+.status-icon { font-size: 1.8rem; margin-bottom: 0.5rem; }
+.status-title { font-weight: 600; font-size: 0.9rem; color: var(--text); text-transform: capitalize; }
+.status-detail { font-size: 0.8rem; color: var(--text-2); margin-top: 0.25rem; }
+
+/* ── Architecture diagram ── */
+.arch-diagram {
+  font-family: 'Courier New', monospace;
+  font-size: 0.7rem; line-height: 1.4;
+  color: var(--cyan); background: rgba(0,0,0,0.3);
+  padding: 1rem; border-radius: 8px;
+  overflow-x: auto; white-space: pre;
+}
+
+/* ── Position badges ── */
+.pos-badge {
+  display: inline-block; padding: 0.15rem 0.5rem;
+  border-radius: 6px; font-weight: 700; font-size: 0.82rem;
+}
+.pos-1 { background: linear-gradient(135deg, #ffd700, #ffaa00); color: #000; }
+.pos-2 { background: linear-gradient(135deg, #c0c0c0, #999); color: #000; }
+.pos-3 { background: linear-gradient(135deg, #cd7f32, #a0522d); color: #fff; }
+.pos-other { background: var(--panel); color: var(--text-2); }
+
+/* ── Driver code chip ── */
+.driver-code {
+  font-family: 'Inter', monospace; font-weight: 700;
+  background: rgba(99, 102, 241, 0.15); color: var(--indigo);
+  padding: 0.1rem 0.45rem; border-radius: 4px; font-size: 0.82rem;
+}
+
+/* ── Table scrolling ── */
+.table-scroll { overflow-x: auto; max-height: 600px; overflow-y: auto; }
+
+/* ── Fresh row animation ── */
+.row-fresh {
+  animation: freshPulse 2s ease-out;
+}
+@keyframes freshPulse {
+  0% { background: rgba(99, 102, 241, 0.2); }
+  100% { background: transparent; }
+}
+
+/* ── Error row ── */
+.row-error { background: rgba(244, 63, 94, 0.06); }
+.error-badge {
+  background: rgba(244, 63, 94, 0.15); color: var(--rose);
+  padding: 0.15rem 0.5rem; border-radius: 4px;
+  font-size: 0.78rem; font-weight: 600;
+}
+
+/* ── Lineage flow ── */
+.lineage-flow {
+  display: flex; flex-direction: column; gap: 0.75rem;
+  margin: 1rem 0;
+}
+.lineage-row {
+  display: flex; align-items: center; gap: 1rem;
+  flex-wrap: wrap;
+}
+.lineage-node {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 8px; padding: 0.6rem 1rem;
+  font-size: 0.82rem; font-weight: 500; min-width: 160px;
+  text-align: center;
+}
+.lineage-node.source { border-color: rgba(34, 211, 238, 0.3); color: var(--cyan); }
+.lineage-node.dest { border-color: rgba(16, 185, 129, 0.3); color: var(--emerald); }
+.lineage-node small { display: block; font-weight: 400; color: var(--text-2); font-size: 0.75rem; }
+.lineage-arrow { color: var(--text-3); font-weight: 500; white-space: nowrap; }
+.lineage-transform {
+  background: rgba(168, 85, 247, 0.15); color: var(--purple);
+  padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.78rem;
+}
+
+/* ── Column mapping chips ── */
+.col-mapping {
+  display: inline-block; margin: 0.15rem 0;
+  font-size: 0.78rem;
+}
+.col-mapping code {
+  background: rgba(99, 102, 241, 0.1); padding: 0.1rem 0.3rem;
+  border-radius: 3px; font-size: 0.75rem;
+}
+

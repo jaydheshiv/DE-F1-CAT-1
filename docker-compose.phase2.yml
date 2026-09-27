@@ -1,0 +1,148 @@
+# ============================================================
+# Phase II: Docker Compose Override — Lakehouse Services
+# Usage: docker compose -f docker-compose.yml -f docker-compose.phase2.yml up -d
+# ============================================================
+version: '3.8'
+
+services:
+  # ── MinIO (S3-compatible Object Storage) ──────────────────
+  minio:
+    image: quay.io/minio/minio:latest
+    container_name: f1-minio
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Web Console
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── MinIO Bootstrap (create buckets) ──────────────────────
+  minio-init:
+    image: quay.io/minio/mc:latest
+    container_name: f1-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    volumes:
+      - ./lakehouse/minio-init.sh:/init.sh
+    entrypoint: /bin/sh
+    command: /init.sh
+    restart: "no"
+
+  # ── Hive Metastore (Iceberg Catalog) ──────────────────────
+  hive-metastore:
+    image: apache/hive:4.0.0
+    container_name: f1-hive-metastore
+    environment:
+      SERVICE_NAME: metastore
+      DB_DRIVER: postgres
+      SERVICE_OPTS: >-
+        -Djavax.jdo.option.ConnectionDriverName=org.postgresql.Driver
+        -Djavax.jdo.option.ConnectionURL=jdbc:postgresql://postgres:5432/labdb
+        -Djavax.jdo.option.ConnectionUserName=labadmin
+        -Djavax.jdo.option.ConnectionPassword=labpassword
+        -Dfs.s3a.endpoint=http://minio:9000
+        -Dfs.s3a.access.key=minioadmin
+        -Dfs.s3a.secret.key=minioadmin
+        -Dfs.s3a.path.style.access=true
+        -Dfs.s3a.impl=org.apache.hadoop.fs.s3a.S3AFileSystem
+    ports:
+      - "9083:9083"
+    volumes:
+      - hive_data:/opt/hive/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+
+  # ── PySpark Structured Streaming (Kafka → Iceberg) ────────
+  spark-iceberg:
+    build:
+      context: ./lakehouse/spark
+      dockerfile: Dockerfile.spark
+    container_name: f1-spark-iceberg
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      KAFKA_TOPIC: f1-lap-events
+      S3_ENDPOINT: http://minio:9000
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      WAREHOUSE_PATH: s3a://warehouse
+      CHECKPOINT_DIR: s3a://warehouse/checkpoints
+    ports:
+      - "4040:4040"   # Spark UI
+    depends_on:
+      kafka:
+        condition: service_healthy
+      hive-metastore:
+        condition: service_started
+      minio-init:
+        condition: service_completed_successfully
+    restart: on-failure
+
+  # ── Trino (Distributed SQL Engine) ────────────────────────
+  trino:
+    image: trinodb/trino:443
+    container_name: f1-trino
+    ports:
+      - "8090:8090"   # Trino UI + API
+    volumes:
+      - ./lakehouse/trino/etc:/etc/trino
+    depends_on:
+      hive-metastore:
+        condition: service_started
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8090/v1/info | grep -q '\"starting\":false' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
+  # ── Update API to include Trino access ────────────────────
+  api:
+    environment:
+      TRINO_HOST: trino
+      TRINO_PORT: "8090"
+      TRINO_CATALOG: iceberg
+      TRINO_SCHEMA: lakehouse
+
+  # ── Update Airflow with Phase II DAGs & packages ──────────
+  airflow-webserver:
+    environment:
+      TRINO_HOST: trino
+      TRINO_PORT: "8090"
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-}
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+    volumes:
+      - ./monitoring:/opt/airflow/monitoring
+
+  airflow-scheduler:
+    environment:
+      TRINO_HOST: trino
+      TRINO_PORT: "8090"
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-}
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+    volumes:
+      - ./monitoring:/opt/airflow/monitoring
+
+volumes:
+  minio_data:
+  hive_data:
